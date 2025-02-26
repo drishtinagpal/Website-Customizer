@@ -10,16 +10,19 @@ app.use(cors());
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+
 // Function to fetch entire webpage HTML
 const fetchWebpageContent = async (url) => {
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
   await page.goto(url, { waitUntil: "domcontentloaded" });
 
-  const pageContent = await page.content(); // Fetch full HTML
+  pageContent = await page.content(); // Fetch full HTML
   await browser.close();
   return pageContent;
+  
 };
+
 
 // Function to convert webpage HTML into JSON format
 const convertHTMLToJSON = async (html) => {
@@ -32,11 +35,28 @@ const convertHTMLToJSON = async (html) => {
     Provide only valid JSON output.
   `;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   try {
     const result = await model.generateContent(prompt);
-    return JSON.parse(result.response.text());
+    const rawText = result.response.text();
+const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+if (!jsonMatch) {
+    console.error("Error: No JSON found in AI response:", rawText);
+    return { error: "Failed to extract valid JSON from AI response." };
+}
+
+const cleanedText = jsonMatch[0].trim();
+
+try {
+    return JSON.parse(cleanedText);
+} catch (error) {
+    console.error("Error parsing extracted JSON:", cleanedText);
+    return { error: "Failed to parse AI-generated JSON." };
+}
+
+
   } catch (error) {
     console.error("Error converting HTML to JSON:", error);
     return { error: "Failed to process webpage structure." };
@@ -54,11 +74,28 @@ const convertUserCommandToJSON = async (command) => {
     Provide only valid JSON output.
   `;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   try {
     const result = await model.generateContent(prompt);
-    return JSON.parse(result.response.text());
+    const rawText = result.response.text();
+const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+if (!jsonMatch) {
+    console.error("Error: No JSON found in AI response:", rawText);
+    return { error: "Failed to extract valid JSON from AI response." };
+}
+
+const cleanedText = jsonMatch[0].trim();
+
+try {
+    return JSON.parse(cleanedText);
+} catch (error) {
+    console.error("Error parsing extracted JSON:", cleanedText);
+    return { error: "Failed to parse AI-generated JSON." };
+}
+
+
   } catch (error) {
     console.error("Error converting user command to JSON:", error);
     return { error: "Failed to process user command." };
@@ -79,11 +116,28 @@ const applyChangesToWebpageJSON = async (pageJSON, commandJSON) => {
     Provide the modified webpage JSON with applied changes.
   `;
 
-  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
   try {
     const result = await model.generateContent(prompt);
-    return JSON.parse(result.response.text());
+    const rawText = result.response.text();
+const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+
+if (!jsonMatch) {
+    console.error("Error: No JSON found in AI response:", rawText);
+    return { error: "Failed to extract valid JSON from AI response." };
+}
+
+const cleanedText = jsonMatch[0].trim();
+
+try {
+    return JSON.parse(cleanedText);
+} catch (error) {
+    console.error("Error parsing extracted JSON:", cleanedText);
+    return { error: "Failed to parse AI-generated JSON." };
+}
+
+
   } catch (error) {
     console.error("Error applying changes:", error);
     return { error: "Failed to apply changes." };
