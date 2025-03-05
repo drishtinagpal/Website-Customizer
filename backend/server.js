@@ -119,6 +119,8 @@ const fetchWebpageData = async (url) => {
 
 
 
+
+
 const TOKEN_LIMIT_PER_CHUNK = 400000; // Define token limit per chunk
 
 // Helper function to process the AI response into decision and explanation using regex
@@ -149,9 +151,56 @@ const parseAIResponse = async (result) => {
   }
 };
 
+// New helper function to generate the modified code snippet with minimal diff details.
+// This function strips markdown formatting (e.g., triple backticks) before parsing.
+const generateModifiedCode = async (type, currentCode, userCommand, explanation) => {
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+  const prompt = `
+        You are an AI that takes a snippet of webpage code and an explanation of the required modifications, and outputs only the minimal diff needed to reflect the changes as per the user's request.
+        Do not output the entire code snippet—output only the exact portion that needs to be changed. 
 
+        **Content Type:** ${type}
+        **Original Code Snippet (relevant portion only):**
+        ${currentCode}
 
+        **User Modification Request:**
+        "${userCommand}"
 
+        **Modification Explanation:**
+        ${explanation}
+
+        Please provide the result in **valid JSON format** with:
+        - "modifiedCode": containing only the exact modification that should be applied.
+        - "selector": the exact class, tag, or ID that needs to be modified.
+
+        Ensure that the "selector" field is extracted directly from the relevant HTML structure. 
+
+        Response format:
+        \`\`\`json
+        {
+          "modifiedCode": "Your modified code here...",
+          "selector": "Your selector here..."
+        }
+        \`\`\`
+        `;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+  });
+  
+  let modifiedCodeText = (await result.response.text()).trim();
+  console.log("Modified Code Response:", modifiedCodeText);
+  
+  // Remove markdown formatting (e.g., triple backticks)
+  modifiedCodeText = modifiedCodeText.replace(/^```(json)?/, '').replace(/```$/, '').trim();
+  
+  try {
+    return JSON.parse(modifiedCodeText);
+  } catch (error) {
+    console.error("Error parsing modified code JSON:", error);
+    return { modifiedCodeText };
+  }
+};
 
 const checkModificationNeeded = async (type, content, userCommand) => {
   try {
@@ -180,27 +229,26 @@ const checkModificationNeeded = async (type, content, userCommand) => {
       for (let i = 0; i < contentChunks.length; i++) {
         let chunk = contentChunks[i];
         const prompt = `
-You are an AI that analyzes whether a specific section of a webpage requires modification based on a user's instruction. Your task is to compare the content provided below with the user’s request and decide if a change is necessary.
+          You are an AI that analyzes whether a specific section of a webpage requires modification based on a user's instruction. Your task is to compare the content provided below with the user’s request and decide if a change is necessary.
 
-**Content Type:** ${type}
-**Webpage Section Content:**
-${chunk}
+          **Content Type:** ${type}
+          **Webpage Section Content:**
+          ${chunk}
 
-**User Modification Request:**
-"${userCommand}"
+          **User Modification Request:**
+          "${userCommand}"
 
-Please analyze the content carefully and consider:
-- Whether the content contains elements, attributes, or styles that relate to the user's request.
-- If the user request logically applies to this section.
-- Any indicators within the content that support or contradict the need for a change.
+          Please analyze the content carefully and consider:
+          - Whether the content contains elements, attributes, or styles that relate to the user's request.
+          - If the user request logically applies to this section.
+          - Any indicators within the content that support or contradict the need for a change.
 
-**Important:** Respond in the exact format:
-- "true - [detailed explanation]" if the section requires modification. (Include which parts of the content match the user request and why.)
-- "false - [detailed explanation]" if no modification is required. (Explain clearly why the section does not apply.)
+          **Important:** Respond in the exact format:
+          - "true - [detailed explanation]" if the section requires modification. (Include which parts of the content match the user request and why.)
+          - "false - [detailed explanation]" if no modification is required. (Explain clearly why the section does not apply.)
 
-Your response must include both the true/false decision and a detailed explanation.
-        `;
-
+          Your response must include both the true/false decision and a detailed explanation.
+                  `;
         const result = await model.generateContent({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
         });
@@ -208,14 +256,22 @@ Your response must include both the true/false decision and a detailed explanati
         // Parse the AI response into decision and explanation using the regex-based function
         const { decision, explanation } = await parseAIResponse(result);
 
-        
+        let modifiedCode = null;
+        let selector = null;
+        // If modifications are needed, generate the exact modified code diff
+        if (decision === "true") {
+          const modResult = await generateModifiedCode(type, chunk, userCommand, explanation);
+          modifiedCode = modResult.modifiedCode || modResult; // in case of error, include raw response
+          selector = modResult.selector || null;
+        }
 
         // Save as an object (for each chunk) so that the final API response includes the explanation and modification details if applicable
         modificationResults.push({
           chunk: i + 1,
           decision,
           explanation,
-        
+          modifiedCode,
+          selector // this field will be null if no modification is required
         });
       }
 
@@ -224,38 +280,42 @@ Your response must include both the true/false decision and a detailed explanati
     } else {
       // Process normally (if token count is within limit)
       const prompt = `
-You are an AI that analyzes whether a specific section of a webpage requires modification based on a user's instruction. Your task is to compare the content provided below with the user’s request and decide if a change is necessary.
+          You are an AI that analyzes whether a specific section of a webpage requires modification based on a user's instruction. Your task is to compare the content provided below with the user’s request and decide if a change is necessary.
 
-**Content Type:** ${type}
-**Webpage Section Content:**
-${contentStr}
+          **Content Type:** ${type}
+          **Webpage Section Content:**
+          ${contentStr}
 
-**User Modification Request:**
-"${userCommand}"
+          **User Modification Request:**
+          "${userCommand}"
 
-Please analyze the content carefully and consider:
-- Whether the content contains elements, attributes, or styles that relate to the user's request.
-- If the user request logically applies to this section.
-- Any indicators within the content that support or contradict the need for a change.
+          Please analyze the content carefully and consider:
+          - Whether the content contains elements, attributes, or styles that relate to the user's request.
+          - If the user request logically applies to this section.
+          - Any indicators within the content that support or contradict the need for a change.
 
-**Important:** Respond in the exact format:
-- "true - [detailed explanation]" if the section requires modification. (Include which parts of the content match the user request and why.)
-- "false - [detailed explanation]" if no modification is required. (Explain clearly why the section does not apply.)
+          **Important:** Respond in the exact format:
+          - "true - [detailed explanation]" if the section requires modification. (Include which parts of the content match the user request and why.)
+          - "false - [detailed explanation]" if no modification is required. (Explain clearly why the section does not apply.)
 
-Your response must include both the true/false decision and a detailed explanation.
-      `;
-
+          Your response must include both the true/false decision and a detailed explanation.
+                `;
       const result = await model.generateContent({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
       });
-
       // Parse the response using the regex-based function
       const { decision, explanation } = await parseAIResponse(result);
       
-      
+      let modifiedCode = null;
+      let selector = null;
+      if (decision === "true") {
+        const modResult = await generateModifiedCode(type, contentStr, userCommand, explanation);
+        modifiedCode = modResult.modifiedCode || modResult;
+        selector = modResult.selector || null;
+      }
       
       console.log(`${type}: ${decision} - ${explanation}`);
-      return { decision, explanation };
+      return { decision, explanation, modifiedCode ,selector};
     }
   } catch (error) {
     console.error(`Error checking modification for ${type}:`, error);
@@ -281,11 +341,6 @@ const splitIntoChunks = async (text, numChunks, tokenCount) => {
   
   return chunks;
 };
-
-
-
-
-
 
 
 
