@@ -1,3 +1,5 @@
+// content.js (Updated to Ensure CSS is Injected Correctly)
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("📩 Modification request received in content.js:", message);
 
@@ -9,6 +11,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         applyModifications(message.modificationsNeeded);
+        saveModificationsToStorage(message.modificationsNeeded); // 🔥 Save modifications for persistence
 
         setTimeout(() => {
             console.log("✅ Sending success response from content.js");
@@ -19,69 +22,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-function applyModifications(data) {
-    let appliedSelectors = new Set();
+function applyModifications(modifications) {
+    if (!modifications || typeof modifications !== 'object') return;
 
-    Object.entries(data).forEach(([type, modifications]) => {
-        if (!modifications) {
-            console.log(`❌ No modifications needed for ${type}`);
-            return;
+    // Extract relevant modifications where decision is true
+    for (const [key, mod] of Object.entries(modifications)) {
+        if (mod.decision === "true" && mod.selector && mod.modifiedCode) {
+            applyChange(mod.selector, mod.modifiedCode, key);
         }
-
-        modifications = Array.isArray(modifications) ? modifications : [modifications];
-
-        modifications.forEach(mod => {
-            const { decision, explanation, modifiedCode, selector } = mod;
-
-            if (decision !== "true" || !modifiedCode || !selector) {
-                console.log(`ℹ️ Skipping ${type}: ${explanation}`);
-                return;
-            }
-
-            console.log(`✅ Applying modification to ${type}: ${explanation}`);
-
-            if (appliedSelectors.has(selector) && selector !== "body") {
-                console.warn(`⚠️ Skipping duplicate modification for selector: ${selector}`);
-                return;
-            }
-            appliedSelectors.add(selector);
-
-            if (document.styleSheets.length === 0) {
-                let globalStyle = document.createElement("style");
-                document.head.appendChild(globalStyle);
-            }
-            let styleSheet = document.styleSheets[document.styleSheets.length - 1];
-            styleSheet.insertRule(`:root ${selector} { ${modifiedCode} !important; }`, styleSheet.cssRules.length);
-
-            if (type === "inlineJS" && typeof modifiedCode === "string") {
-                console.log(`⚡ Injecting Inline JS for ${selector}`);
-                document.querySelectorAll(selector).forEach(element => {
-                    element.setAttribute("onClick", modifiedCode);
-                });
-            }
-
-            if (type === "externalCSS" && modifiedCode) {
-                console.log("🎨 Injecting external CSS...");
-                let styleTag = document.createElement("style");
-                styleTag.innerHTML = modifiedCode;
-                document.head.appendChild(styleTag);
-            }
-
-            if (type === "externalJS" && modifiedCode) {
-                console.log("⚡ Injecting external JS...");
-                let scriptTag = document.createElement("script");
-                scriptTag.innerHTML = modifiedCode;
-                document.body.appendChild(scriptTag);
-            }
-        });
-    });
-
-    console.log("🎉 All modifications applied successfully!");
-
-    const observer = new MutationObserver(() => {
-        console.log("🔄 Detected page changes, reapplying modifications...");
-        setTimeout(() => applyModifications(data), 50);
-    });
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    }
 }
 
+// Function to modify elements dynamically
+function applyChange(selector, modifiedCode, type) {
+    if (!selector || !modifiedCode) return;
+
+    switch (type) {
+        case "html":
+            document.querySelectorAll(selector).forEach(el => {
+                el.style.cssText += modifiedCode; // Apply new styles
+            });
+            break;
+
+        case "externalCSS":
+        case "inlineCSS":
+            addStyle(modifiedCode);
+            break;
+
+        case "externalJS":
+        case "inlineJS":
+            addScript(modifiedCode);
+            break;
+    }
+}
+
+// Function to inject CSS dynamically
+function addStyle(cssCode) {
+    let styleTag = document.createElement("style");
+    styleTag.textContent = cssCode;
+    document.head.appendChild(styleTag);
+}
+
+// Function to inject JS dynamically
+function addScript(jsCode) {
+    let scriptTag = document.createElement("script");
+    scriptTag.textContent = jsCode;
+    document.body.appendChild(scriptTag);
+}
+
+// 🔥 Save modifications so they persist even after page reload
+function saveModificationsToStorage(modifications) {
+    chrome.storage.local.set({ savedModifications: modifications }, () => {
+        console.log("💾 Modifications saved to storage.");
+    });
+}
+
+// 🔥 Reapply modifications when the page is loaded again
+window.addEventListener("load", () => {
+    chrome.storage.local.get("savedModifications", (data) => {
+        if (data.savedModifications) {
+            console.log("♻️ Reapplying saved modifications...");
+            applyModifications(data.savedModifications);
+        }
+    });
+});
