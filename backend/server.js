@@ -346,33 +346,38 @@ const splitIntoChunks = async (text, numChunks, tokenCount) => {
 
 
 
-// API Route: Process user request
 app.post("/api/process", async (req, res) => {
+  console.log("📥 Received Request Body:", req.body);
   const { webpageLink, userCommand } = req.body;
 
   if (!webpageLink || !userCommand) {
-    return res.status(400).json({ error: "Missing required parameters." });
+      console.error("❌ Missing Parameters:", webpageLink, userCommand);
+      return res.status(400).json({ error: "Missing required parameters." });
   }
+
+  console.log("✅ Request received correctly. Processing...");
 
   try {
-    const webpageData = await fetchWebpageData(webpageLink);
+      const webpageData = await fetchWebpageData(webpageLink);
 
-    // Check each portion separately
-    const results = {
-      html: await checkModificationNeeded("HTML", webpageData.html, userCommand),
-      inlineCSS: await checkModificationNeeded("Inline CSS", webpageData.inlineCSS.join("\n"), userCommand),
-      inlineJS: await checkModificationNeeded("Inline JS", webpageData.inlineJS.join("\n"), userCommand),
+      const results = {
+          html: await checkModificationNeeded("HTML", webpageData.html, userCommand),
+          inlineCSS: await checkModificationNeeded("Inline CSS", webpageData.inlineCSS.join("\n"), userCommand),
+          inlineJS: await checkModificationNeeded("Inline JS", webpageData.inlineJS.join("\n"), userCommand),
+          externalCSS: await checkModificationNeeded("External CSS", Object.values(webpageData.externalCSS).join("\n"), userCommand),
+          externalJS: await checkModificationNeeded("External JS", Object.values(webpageData.externalJS).join("\n"), userCommand)
+      };
 
-      externalCSS: await checkModificationNeeded("External CSS", Object.values(webpageData.externalCSS).join("\n"), userCommand),
-      externalJS: await checkModificationNeeded("External JS", Object.values(webpageData.externalJS).join("\n"), userCommand)
-    };
+      console.log("✅ Modifications generated:", results);
 
-    res.json({ success: true, modificationsNeeded: results });
+      res.json({ success: true, modificationsNeeded: results });
   } catch (error) {
-    console.error("Error processing request:", error);
-    res.status(500).json({ error: "Internal server error" });
+      console.error("❌ Error processing request:", error);
+      res.status(500).json({ error: "Internal server error" });
   }
 });
+
+
 
 
 
