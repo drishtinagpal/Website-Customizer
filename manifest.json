@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "AI Website Modifier",
+  "version": "1.0",
+  "description": "Modify any website dynamically using AI",
+  "permissions": ["scripting", "activeTab", "storage","tabs"],
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+
+  
